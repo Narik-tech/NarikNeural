@@ -17,7 +17,6 @@ namespace NarikNeural.Trainers
         
         private double variance;
 
-
         public BruteTrainer(double variance)
         {
             this.variance = variance;
@@ -53,6 +52,7 @@ namespace NarikNeural.Trainers
         {
             var original = node.bias;
             node.bias = newVal;
+
             var newAcc = evaluator.Eval(predictor);
 
             if (newAcc > previousAcc)
@@ -68,8 +68,9 @@ namespace NarikNeural.Trainers
 
         private double alterNodeWeight(NeuralNode node, int k, IEvaluator evaluator, double previousAcc, double newVal)
         {
-            var original = node.bias;
+            var original = node.weights[k];
             node.weights[k] = newVal;
+
             var newAcc = evaluator.Eval(predictor);
 
             if (newAcc > previousAcc)

@@ -23,5 +23,9 @@ namespace NarikNeural
             }
             bias = StaticMethods.GetRandomNumber();
         }
+        public NeuralNode()
+        {
+
+        }
     }
 }

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml;
+using System.Xml.Serialization;
 using NarikNeural.Evaluators;
 using NarikNeural.Activators;
 using NarikNeural.Trainers;
@@ -10,9 +12,10 @@ namespace NarikNeural
     public class NeuralNetwork
     {
         public List<List<NeuralNode>> neuralLayers = new List<List<NeuralNode>>();
-        public readonly int inputLayerSize;
-        public readonly int outputLayerSize;
+        public int inputLayerSize { get { return neuralLayers.Count > 0 ? neuralLayers.First().Count : 0; } }
+        public int outputLayerSize{ get { return neuralLayers.Count > 0 ? neuralLayers.Last().Count : 0; } }
         public IActivator activator;
+        private XmlSerializer nodeSerializer = new XmlSerializer(typeof(List<List<NeuralNode>>));
 
         /// <summary>
         /// Constructor for the Neural Network. Each layer is created corresponding to provided number of nodes.  
@@ -23,8 +26,6 @@ namespace NarikNeural
         public NeuralNetwork(List<int> layerLengths, IActivator activator)
         {
             this.activator = activator;
-            inputLayerSize = layerLengths[0];
-            outputLayerSize = layerLengths.Last();
             //runs for all but last layer length
             for(int i = 0; i + 1 < layerLengths.Count; i++)
             {
@@ -42,6 +43,12 @@ namespace NarikNeural
                 tempLayer.Add(new NeuralNode(0));
 
             neuralLayers.Add(tempLayer);
+        }
+
+        public NeuralNetwork(string inboundNetworkPath, IActivator activator)
+        {
+            CreateNetworkByPath(inboundNetworkPath);
+            this.activator = activator;
         }
 
         /// <summary>
@@ -91,6 +98,37 @@ namespace NarikNeural
             trainer.SetVals(neuralLayers, Predict);
             trainer.Train(evaluator);
             return evaluator.Eval(Predict);
+        }
+
+        public void WriteNetworkXML(string outputPath, IEvaluator? evaluator = null)
+        {
+            //generate timestamped filename
+            var outputFileName = $"NeuralNetwork{DateTime.Now.ToString("yyyy_MM_dd_ss")}";
+            //append accuracy if evaluator is provided
+            if (evaluator != null)
+                outputFileName += "_a" + evaluator.Eval(Predict).ToString("F3");
+
+            var fullPath = Path.Join(outputPath, outputFileName);
+
+            XmlSerializer serializer = new XmlSerializer(typeof(List<List<NeuralNode>>));
+
+            using (XmlWriter writer = XmlWriter.Create(fullPath))
+            {
+                serializer.Serialize(writer, neuralLayers); 
+            }
+        }
+
+        public void CreateNetworkByPath(string inputPath)
+        {
+            XmlSerializer serializer = new XmlSerializer(typeof(List<List<NeuralNode>>));
+
+            using (XmlReader reader = XmlReader.Create(inputPath))
+            {
+                var parsedLayers = serializer.Deserialize(reader) as List<List<NeuralNode>>;
+                if (parsedLayers is null)
+                    throw new Exception($"Neural layers at path {inputPath} could not be parsed.");
+                neuralLayers = parsedLayers;
+            }
         }
     }
 }

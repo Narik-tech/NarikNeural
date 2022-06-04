@@ -15,6 +15,9 @@ var network = new NeuralNetwork(new List<int>()
 },
 new ReLU());
 
+//example of how to import network XML
+//var network = new NeuralNetwork(@"C:\Users\PC\Documents\TestFiles\testFile", new ReLU());
+
 int roundsOfTraining = 200;
 //trains neural network and writes accuracy for each round to console
 //network is being trained to output 10
@@ -24,6 +27,9 @@ for (int i = 0; i < roundsOfTraining; i++)
         new BruteTrainer(.5),
         new TrainToTen(network.inputLayerSize)));
 }
+
+//example of how to write network XML
+//network.WriteNetworkXML(@"C:\Users\PC\Documents\TestFiles", new TrainToTen(network.inputLayerSize));
 
 //displays predicted outputs after some provided inputs
 for (int i = -30; i < 30; i += 10)
