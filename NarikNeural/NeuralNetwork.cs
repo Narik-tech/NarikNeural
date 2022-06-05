@@ -15,40 +15,71 @@ namespace NarikNeural
         public int inputLayerSize { get { return neuralLayers.Count > 0 ? neuralLayers.First().Count : 0; } }
         public int outputLayerSize{ get { return neuralLayers.Count > 0 ? neuralLayers.Last().Count : 0; } }
         public IActivator activator;
-        private XmlSerializer nodeSerializer = new XmlSerializer(typeof(List<List<NeuralNode>>));
+        private XmlSerializer nodeSerializer = new XmlSerializer(typeof(NeuralXML));
 
         /// <summary>
         /// Constructor for the Neural Network. Each layer is created corresponding to provided number of nodes.  
-        /// All nodes between layers are connected.
+        /// If weightLimit is provided, the number of weights for a node will not exceed this, creating partially connected layers.
         /// </summary>
-        /// <param name="layerLengths">List of ints representing number of nodes in each layer.</param>
-        /// <param name="activator">Activation function for non-linear transformations between layers.</param>
-        public NeuralNetwork(List<int> layerLengths, IActivator activator)
+        /// <param name="layerLengths">List of ints representing number of nodes in each layer.</param>/param>
+        /// <param name="activator">Activation function for non-linear transformations between layers.<
+        public NeuralNetwork(List<int> layerLengths, IActivator activator, int? weightLimit = null)
         {
             this.activator = activator;
             //runs for all but last layer length
-            for(int i = 0; i + 1 < layerLengths.Count; i++)
+            for(int layerNum = 0; layerNum + 1 < layerLengths.Count; layerNum++)
             {
-                List<NeuralNode> layer = new List<NeuralNode>(layerLengths[i]);
-
-                for (int j = 0; j < layerLengths[i]; j++)
-                    layer.Add(new NeuralNode(layerLengths[i + 1]));
-
+                int nextLayer = layerLengths[layerNum + 1];
+                List<NeuralNode> layer = new List<NeuralNode>(layerLengths[layerNum]);
+                int numOfWeights = weightLimit == null ? nextLayer : new int[] { (int)weightLimit, nextLayer }.Min();
+                for (int j = 0; j < layerLengths[layerNum]; j++)
+                {
+                    var node = new NeuralNode(j);
+                    node.CreateWeightsBias(numOfWeights, nextLayer);
+                    layer.Add(node);
+                }
                 neuralLayers.Add(layer);
             }
             //add last layer
             var tempLayer = new List<NeuralNode>();
 
             for (int i = 0; i < outputLayerSize; i++)
-                tempLayer.Add(new NeuralNode(0));
+            {
+                var node = new NeuralNode(i);
+                node.CreateWeightsBias(0, 0);
+                tempLayer.Add(node);
+            }
 
             neuralLayers.Add(tempLayer);
+            SetNodeDictionaries();
         }
 
         public NeuralNetwork(string inboundNetworkPath, IActivator activator)
         {
             CreateNetworkByPath(inboundNetworkPath);
             this.activator = activator;
+        }
+
+        //sets values in dictionaries referencing connected weighted nodes from previous layer
+        public void SetNodeDictionaries()
+        {
+            if (neuralLayers.Count < 2)
+                throw new Exception("Not enough layers to for connections.");
+            for (int layer = 1; layer < neuralLayers.Count; layer++)
+            {
+                foreach(var node in neuralLayers[layer])
+                {
+                    node.previousConnectedNodes.Clear();
+                }
+
+                foreach(var node in neuralLayers[layer - 1])
+                {
+                    foreach(int weightKey in node.weights.Keys)
+                    {
+                        neuralLayers[layer][weightKey].previousConnectedNodes.Add(node.positionInLayer, node);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -60,26 +91,25 @@ namespace NarikNeural
             if (input.Count != inputLayerSize)
                 throw new Exception($"Invalid input list count.  Expected: {inputLayerSize}, actual: {input.Count}");
 
+
             var previousLayer = new List<double>();
             var currentLayer = new List<double>();
-            
-            //add layer one biases to input
-            for(int i = 0; i < inputLayerSize; i++)
+
+            ////add layer one biases to input
+            for (int i = 0; i < inputLayerSize; i++)
             {
                 previousLayer.Add(input[i] + neuralLayers[0][i].bias);
-            }  
-        
-            //calculate all layers
-            for(int layer = 1; layer < neuralLayers.Count; layer++)
+            }
+
+            for (int layer = 1; layer < neuralLayers.Count; layer++)
             {
-                //calculate weighted inputs from previous layer
                 for (int currentNode = 0; currentNode < neuralLayers[layer].Count; currentNode++)
                 {
                     double weightedValue = 0;
                     //adds each weighted value from previous layer
-                    for (int previousNode = 0; previousNode < previousLayer.Count; previousNode++)
+                    foreach (KeyValuePair<int, NeuralNode> node in neuralLayers[layer][currentNode].previousConnectedNodes)
                     {
-                        weightedValue += previousLayer[previousNode] * neuralLayers[layer-1][previousNode].weights[currentNode];
+                        weightedValue += previousLayer[node.Key] * node.Value.weights[currentNode];
                     }
                     weightedValue += neuralLayers[layer][currentNode].bias;
                     currentLayer.Add(activator.Activate(weightedValue));
@@ -88,6 +118,26 @@ namespace NarikNeural
                 currentLayer = new List<double>();
             }
             return previousLayer;
+
+            ////calculate all layers
+            //for(int layer = 1; layer < neuralLayers.Count; layer++)
+            //{
+            //    //calculate weighted inputs from previous layer
+            //    for (int currentNode = 0; currentNode < neuralLayers[layer].Count; currentNode++)
+            //    {
+            //        double weightedValue = 0;
+            //        //adds each weighted value from previous layer
+            //        for (int previousNode = 0; previousNode < previousLayer.Count; previousNode++)
+            //        {
+            //            weightedValue += previousLayer[previousNode] * neuralLayers[layer-1][previousNode].weights[currentNode];
+            //        }
+            //        weightedValue += neuralLayers[layer][currentNode].bias;
+            //        currentLayer.Add(activator.Activate(weightedValue));
+            //    }
+            //    previousLayer = currentLayer.ToList();
+            //    currentLayer = new List<double>();
+            //}
+            //return previousLayer;
         }
 
         /// <summary>
@@ -108,27 +158,28 @@ namespace NarikNeural
             if (evaluator != null)
                 outputFileName += "_a" + evaluator.Eval(Predict).ToString("F3");
 
-            var fullPath = Path.Join(outputPath, outputFileName);
+            outputFileName += ".xml";
 
-            XmlSerializer serializer = new XmlSerializer(typeof(List<List<NeuralNode>>));
+            var fullPath = Path.Join(outputPath, outputFileName);
 
             using (XmlWriter writer = XmlWriter.Create(fullPath))
             {
-                serializer.Serialize(writer, neuralLayers); 
+                nodeSerializer.Serialize(writer, (NeuralXML)neuralLayers); 
             }
         }
 
         public void CreateNetworkByPath(string inputPath)
         {
-            XmlSerializer serializer = new XmlSerializer(typeof(List<List<NeuralNode>>));
-
+            NeuralXML? xmlLayers;
             using (XmlReader reader = XmlReader.Create(inputPath))
             {
-                var parsedLayers = serializer.Deserialize(reader) as List<List<NeuralNode>>;
-                if (parsedLayers is null)
+                xmlLayers = nodeSerializer.Deserialize(reader) as NeuralXML;
+                if (xmlLayers is null)
                     throw new Exception($"Neural layers at path {inputPath} could not be parsed.");
-                neuralLayers = parsedLayers;
             }
+            var parsedLayers = (List<List<NeuralNode>>)xmlLayers;
+            neuralLayers = parsedLayers;
+            SetNodeDictionaries();
         }
     }
 }
